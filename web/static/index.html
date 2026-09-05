@@ -1709,6 +1709,16 @@ renderScales();
   }
   if (!('webkitdirectory' in modelFolder)) msFolder.style.display = 'none';
 
+  if (mpHead && mpBody) {
+    var mpExpand = function (open) {
+      mpBody.classList.toggle('hidden', !open);
+      if (mpToggle) mpToggle.textContent = open ? '收起 ▴' : '展开 ▾';
+    };
+    mpHead.addEventListener('click', function () { mpExpand(mpBody.classList.contains('hidden')); });
+    if (mpToggle) mpToggle.addEventListener('click', function (e) { e.stopPropagation(); mpExpand(mpBody.classList.contains('hidden')); });
+    if (mpShowAll) mpShowAll.addEventListener('click', function () { showAllMats(); });
+    if (msExport) msExport.addEventListener('click', function () { doExport(); });
+  }
   bindLightCtrl();
   init3D();
   wireModelPick();
