@@ -1,0 +1,22 @@
+# 运行产生的数据目录（启动后自动重建）
+web/uploads/
+web/previews/
+web/output/
+web/work/
+web/models/
+web/export/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 临时/构建产物
+build_web/
+dist_web/
+*.spec
+
+# 大体积运行环境与工具（源码托管建议排除；如需完整绿色分发可删除下面几行）
+# python_embed/
+# realesrgan/
+# TextureUpscaler.exe
+# TextureUpscalerWeb.exe

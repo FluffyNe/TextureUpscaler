@@ -1,0 +1,1861 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TextureUpscaler</title>
+<style>
+  :root {
+    --bg:#17181b; --panel:#1d1f23; --panel2:#212429; --line:#2a2d33; --line-strong:#4a4e56;
+    --text:#e6e6e3; --muted:#9a9ea6; --accent:#e6e6e3; --accent-contrast:#141518;
+    --track:#33363c; --tab-active:#33363c; --ck1:#1c1e21; --ck2:#202226; --overlay:rgba(13,14,16,.72);
+  }
+  body.light {
+    --bg:#f5f5f3; --panel:#ffffff; --panel2:#efefec; --line:#e2e2df; --line-strong:#b9b9b4;
+    --text:#1a1a1a; --muted:#8a8a86; --accent:#141518; --accent-contrast:#ffffff;
+    --track:#d8d8d4; --tab-active:#e2e2df; --ck1:#e9e9e6; --ck2:#f2f2ef; --overlay:rgba(245,245,243,.78);
+    color-scheme: light;
+  }
+  /* 主题切换平滑过渡 */
+  body, .viewer-head, .panel, .pcard, .overlay, .stage, .tabs,
+  .navlink, .tab, .iconbtn, .numedit, .seg button, .scale-btn,
+  .result-bar, .pbar, select, input[type=text], button.primary, button.ghost,
+  .meta, .brand, .drop-hint, .drop-hint strong, .panel h2,
+  .row label, .row output, .pmeta, .stage-txt {
+    transition: background-color .4s cubic-bezier(.4,0,.2,1),
+                color .4s cubic-bezier(.4,0,.2,1),
+                border-color .4s cubic-bezier(.4,0,.2,1);
+  }
+  input[type=range]::-webkit-slider-runnable-track,
+  input[type=range]::-webkit-slider-thumb,
+  input[type=range]::-moz-range-track,
+  input[type=range]::-moz-range-thumb {
+    transition: background-color .4s cubic-bezier(.4,0,.2,1);
+  }
+  .pfill {
+    transition: width .45s ease, background-color .4s cubic-bezier(.4,0,.2,1);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5;
+    color-scheme: dark;
+  }
+  .hidden { display: none !important; }
+  .app { display: flex; height: 100vh; overflow: hidden; }
+
+  .viewer { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .viewer-head {
+    display: flex; align-items: center; gap: 8px; padding: 10px 16px;
+    border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  .brand { font-weight: 700; letter-spacing: .5px; margin-right: 8px; font-size: 14px; }
+  .navlink {
+    color: var(--muted); text-decoration: none; font-size: 13px;
+    border: 1px solid var(--line); padding: 5px 12px; border-radius: 7px;
+  }
+  .navlink:hover { color: var(--text); }
+  .tabs { display: flex; gap: 2px; background: var(--panel2); padding: 3px; border-radius: 8px; }
+  .tab { border: none; background: transparent; padding: 5px 14px; cursor: pointer; font-size: 13px; color: var(--muted); border-radius: 6px; }
+  .tab.active { color: var(--text); background: var(--tab-active); }
+  .tab:disabled { opacity: .4; cursor: default; }
+  .meta { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .iconbtn {
+    border: 1px solid var(--line); background: var(--panel2); color: var(--text);
+    padding: 5px 12px; border-radius: 7px; cursor: pointer; font-size: 13px;
+  }
+  .numedit {
+    width: 58px; padding: 2px 4px; border: 1px solid var(--line-strong); border-radius: 5px;
+    background: var(--panel2); color: var(--text); font-size: 12px; outline: none;
+  }
+
+  .stage {
+    flex: 1; min-height: 0; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px; overflow: hidden;
+    background: repeating-conic-gradient(var(--ck1) 0% 25%, var(--ck2) 0% 50%) 0 0 / 20px 20px;
+  }
+  .stage img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .stage.dragover { outline: 2px dashed var(--accent); outline-offset: -12px; }
+  .drop-hint { color: var(--muted); text-align: center; max-width: 340px; }
+  .drop-hint strong { display: block; font-size: 16px; color: var(--text); margin-bottom: 6px; }
+
+  .overlay { position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; background: var(--overlay); }
+  .pcard { width: 340px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 22px 24px; }
+  .pcard .stage-txt { font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+  .pbar { height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; }
+  .pfill { height: 100%; width: 0%; background: var(--accent); border-radius: 3px; transition: width .45s ease; }
+  .pmeta { display: flex; justify-content: space-between; margin-top: 10px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+  .panel { width: 340px; flex-shrink: 0; overflow-y: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 18px 20px 26px; }
+  .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin: 24px 0 12px; font-weight: 600; }
+  .panel h2:first-child { margin-top: 0; }
+  .group { margin-bottom: 12px; }
+  .row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .row label { width: 52px; flex-shrink: 0; color: var(--muted); font-size: 13px; }
+  .row output { width: 42px; text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--muted); }
+
+  input[type=range] { flex: 1; -webkit-appearance: none; appearance: none; background: transparent; height: 22px; cursor: pointer; }
+  input[type=range]::-webkit-slider-runnable-track { height: 4px; background: var(--track); border-radius: 2px; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); margin-top: -5px; }
+  input[type=range]::-moz-range-track { height: 4px; background: var(--track); border-radius: 2px; }
+  input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: none; border-radius: 50%; background: var(--accent); }
+
+  select, input[type=text] {
+    width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--panel2); font-size: 13px; color: var(--text); outline: none;
+  }
+  select:focus, input[type=text]:focus { border-color: var(--line-strong); }
+
+  .seg { display: flex; gap: 6px; }
+  .seg button {
+    flex: 1; padding: 8px 0; border: 1px solid var(--line); background: var(--panel2);
+    border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--muted);
+  }
+  .seg button.active { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); font-weight: 600; }
+
+  .scale-row { display: flex; gap: 6px; }
+  .scale-btn { flex: 1; padding: 8px 0; border: 1px solid var(--line); background: var(--panel2); border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--muted); }
+  .scale-btn.active { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); font-weight: 600; }
+
+  .actions { display: flex; gap: 8px; margin-top: 10px; }
+  button.primary { flex: 1; padding: 11px; background: var(--accent); color: var(--accent-contrast); border: none; border-radius: 9px; cursor: pointer; font-size: 14px; font-weight: 600; }
+  button.ghost { padding: 11px 16px; background: transparent; color: var(--text); border: 1px solid var(--line); border-radius: 9px; cursor: pointer; font-size: 13px; }
+  button:disabled { opacity: .45; cursor: default; }
+
+  .result-bar { display: none; margin-top: 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); }
+  .result-bar.show { display: block; }
+  .result-bar a { color: var(--text); font-weight: 600; }
+  .error { color: #e57373; margin-top: 12px; font-size: 13px; white-space: pre-wrap; }
+
+  /* ===== 左侧：贴图抽屉 + 模型预览 ===== */
+  .texdock {
+    width: 30px; flex-shrink: 0; display: flex; background: var(--panel);
+    border-right: 1px solid var(--line); overflow: hidden;
+    transition: width .22s ease; z-index: 5;
+  }
+  .texdock.open { width: 250px; }
+  .texdock-tab {
+    flex: 0 0 30px; width: 30px; border: none; background: transparent; color: var(--muted);
+    cursor: pointer; font-size: 12px; letter-spacing: 2px;
+    display: flex; align-items: center; justify-content: center;
+    writing-mode: vertical-rl; border-right: 1px solid var(--line); padding: 6px 0;
+  }
+  .texdock-tab:hover { color: var(--text); background: var(--panel2); }
+  .texdock-tab .cnt { color: var(--accent); }
+  .texdock-body { flex: 1; min-width: 0; display: none; flex-direction: column; }
+  .texdock.open .texdock-body { display: flex; }
+  .td-head { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  .td-title { font-weight: 600; font-size: 12.5px; }
+  .td-close { border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 6px; }
+  .td-close:hover { color: var(--text); }
+  .td-sub { padding: 5px 12px; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--line); line-height: 1.5; }
+  .td-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .td-empty { padding: 22px 12px; text-align: center; color: var(--muted); font-size: 12px; line-height: 1.8; display: none; }
+  .tex-item {
+    display: flex; gap: 8px; align-items: center; padding: 6px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--panel2); cursor: grab; user-select: none;
+  }
+  .tex-item:hover { border-color: var(--line-strong); }
+  .tex-item:active { cursor: grabbing; }
+  .tex-item .th {
+    width: 44px; height: 44px; flex-shrink: 0; object-fit: contain; border-radius: 5px;
+    background: repeating-conic-gradient(var(--ck1) 0% 25%, var(--ck2) 0% 50%) 0 0 / 12px 12px;
+  }
+  .tex-item .ti { min-width: 0; flex: 1; }
+  .tex-item .tn { font-size: 11.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tex-item .ts { font-size: 10px; color: var(--muted); margin-top: 1px; }
+  .tex-item.up { border-color: var(--accent); }
+  .tex-item.up .ts { color: var(--accent); }
+  .tex-item.missing { opacity: .55; cursor: default; }
+  .tex-actions { border-top: 1px solid var(--line); padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .tex-actions .row-sel { display: flex; gap: 6px; }
+  .tex-actions select { flex: 1; padding: 6px 6px; font-size: 11.5px; }
+  .tex-actions button { padding: 7px; font-size: 12px; }
+
+  .modelside {
+    width: 0; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden;
+    background: var(--panel); border-right: 1px solid var(--line);
+    transition: width .22s ease;
+  }
+  .modelside.open { width: 320px; }
+  .vresizer {
+    flex: 0 0 6px; cursor: col-resize; background: var(--panel);
+    border-right: 1px solid var(--line); user-select: none; touch-action: none;
+    transition: background-color .15s ease;
+  }
+  .vresizer:hover, .vresizer.drag { background: var(--line-strong); }
+  .vresizer.off { display: none; }
+  .modelside.resizing, .vresizer.resizing { transition: none !important; }
+  .ms-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+  .ms-title { font-weight: 600; font-size: 13px; }
+  .ms-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px; gap: 8px; }
+  .ms-import { display: flex; gap: 6px; flex-wrap: wrap; }
+  button.sm { padding: 7px 9px; font-size: 12px; border-radius: 7px; }
+  button.sm.primary { font-weight: 600; }
+  .ms-tip { font-size: 11px; color: var(--muted); line-height: 1.5; }
+  .stage3d {
+    flex: 1; min-height: 180px; position: relative; border: 1px solid var(--line);
+    border-radius: 8px; overflow: hidden;
+    background: radial-gradient(circle at 50% 35%, #23262b, #0e0f12);
+  }
+  body.light .stage3d { background: radial-gradient(circle at 50% 35%, #ffffff, #d6d6d1); }
+  .stage3d canvas { display: block; }
+  .stage3d.dragover3 { outline: 2px dashed var(--accent); outline-offset: -6px; }
+  .ms-hint {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 6px; color: var(--muted); font-size: 12px;
+    text-align: center; padding: 0 18px; z-index: 3; pointer-events: none; line-height: 1.6;
+  }
+  .ms-hint strong { color: var(--text); font-size: 13px; }
+  .ms-hint.err strong { color: #e57373; }
+  .ms-tools { display: flex; gap: 6px; align-items: center; }
+  .ms-modelname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--muted); text-align: right; }
+  .ms-controls { font-size: 11px; color: var(--muted); opacity: .85; }
+
+  /* ===== 3D 光照调节（左下角，可收缩） ===== */
+  .lc {
+    position: absolute; left: 8px; bottom: 8px; z-index: 6;
+    display: flex; flex-direction: column; align-items: flex-start;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  }
+  .lc-tab {
+    border: none; background: transparent; color: var(--muted); cursor: pointer;
+    font-size: 11px; letter-spacing: 1px; padding: 5px 10px; display: flex;
+    align-items: center; gap: 4px; border-radius: 7px;
+  }
+  .lc-tab:hover { color: var(--text); background: var(--panel2); }
+  .lc-body {
+    display: none; flex-direction: column; gap: 2px; width: 212px;
+    padding: 8px 10px 6px; border-bottom: 1px solid var(--line);
+  }
+  .lc.open .lc-body { display: flex; }
+  .lc-row { display: flex; align-items: center; gap: 8px; padding: 1px 0; }
+  .lc-row label { width: 56px; flex-shrink: 0; font-size: 11px; color: var(--muted); }
+  .lc-row input[type=range] { flex: 1; min-width: 0; height: 16px; }
+  .lc-row output {
+    width: 32px; text-align: right; font-size: 11px; color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .tex-item .tn { user-select: none; }
+  .tex-item.dragging { opacity: .35; }
+
+  /* ===== 中间图片预览：缩放 / 平移工具条 ===== */
+  .imgzoom {
+    position: absolute; right: 12px; bottom: 12px; z-index: 4;
+    display: flex; align-items: center; gap: 2px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 3px 4px; opacity: .92;
+  }
+  .imgzoom button {
+    border: none; background: transparent; color: var(--text); cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 3px 7px; border-radius: 5px;
+  }
+  .imgzoom button:hover { background: var(--panel2); }
+  .imgzoom span {
+    min-width: 46px; text-align: center; font-size: 11px; color: var(--muted);
+    font-variant-numeric: tabular-nums; user-select: none;
+  }
+
+  /* ===== 材质面板（显示/隐藏材质） ===== */
+  .matpanel {
+    border: 1px solid var(--line); border-radius: 8px; background: var(--panel2);
+    overflow: hidden; flex-shrink: 0;
+  }
+  .mp-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 10px; cursor: pointer; user-select: none;
+  }
+  .mp-title { font-size: 12px; font-weight: 600; }
+  .mp-title .mc { color: var(--muted); font-weight: 400; margin-left: 4px; font-size: 11px; }
+  .mp-toggle {
+    border: none; background: transparent; color: var(--muted); cursor: pointer;
+    font-size: 11px; padding: 2px 8px; border-radius: 5px;
+  }
+  .mp-toggle:hover { background: var(--panel); color: var(--text); }
+  .mp-body { max-height: 150px; overflow-y: auto; border-top: 1px solid var(--line); }
+  .mp-actions {
+    display: flex; justify-content: flex-end; gap: 6px;
+    padding: 4px 8px; border-bottom: 1px solid var(--line);
+  }
+  .mp-actions button {
+    font-size: 11px; padding: 2px 10px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--muted); border-radius: 5px; cursor: pointer;
+  }
+  .mp-actions button:hover { color: var(--text); border-color: var(--line-strong); }
+  .mp-row {
+    display: flex; align-items: center; gap: 6px; padding: 5px 10px;
+    cursor: pointer; font-size: 11.5px; color: var(--muted);
+  }
+  .mp-row + .mp-row { border-top: 1px solid var(--line); }
+  .mp-row:hover { background: var(--panel); }
+  .mp-row.active {
+    background: var(--panel); color: var(--text);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .mp-row input[type=checkbox] { margin: 0; cursor: pointer; accent-color: var(--accent); flex-shrink: 0; }
+  .mp-row .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--line-strong); flex-shrink: 0; }
+  .mp-row .nm {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  .mp-row .tc { font-size: 10px; color: var(--muted); flex-shrink: 0; }
+  .mp-row.off .nm { opacity: .45; text-decoration: line-through; }
+  .mp-empty { padding: 10px; text-align: center; font-size: 11px; color: var(--muted); }
+
+  /* 贴图高亮：命中/变暗 */
+  .tex-item.hit { border-color: var(--accent); background: var(--panel2); }
+  .tex-item.hit .th { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .tex-item.dim { opacity: .3; }
+  .ms-export { display: flex; }
+  .ms-export button { flex: 1; }
+  .stage img { cursor: grab; }
+  .stage img.grabbing { cursor: grabbing; }
+
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- 最左侧：模型贴图抽屉（可收缩） -->
+  <div class="texdock" id="texDock">
+    <button class="texdock-tab" id="texTab" type="button" title="贴图列表（可拖到中间超分）">贴图<span class="cnt" id="texCnt"></span></button>
+    <div class="texdock-body">
+      <div class="td-head">
+        <div class="td-title">模型贴图</div>
+        <button class="td-close" id="texClose" type="button" title="收起">«</button>
+      </div>
+      <div class="td-sub">当前模型使用的贴图。拖拽到中间区域即可超分。</div>
+      <div class="td-list" id="texList"></div>
+      <div class="td-empty" id="texEmpty">还没有模型。<br>导入模型后这里会列出它用到的贴图。</div>
+      <div class="tex-actions hidden" id="texActions">
+        <div class="tex-note">最近一次超分结果：</div>
+        <div class="row-sel">
+          <select id="texSlotSel"></select>
+          <button class="primary" id="texApply" type="button" style="width:auto">挂到模型</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 左侧：模型导入 + 3D 预览（可收起/展开） -->
+  <div class="modelside" id="modelSide">
+    <div class="ms-head">
+      <div class="ms-title">模型预览</div>
+      <button class="iconbtn" id="msClose" type="button" style="padding:3px 10px;font-size:12px">收起</button>
+    </div>
+    <div class="ms-body">
+      <div class="ms-import">
+        <button class="primary sm" id="msImport" type="button">导入 PMX / PMD 模型</button>
+        <button class="ghost sm" id="msFolder" type="button" title="选择模型所在文件夹（连同贴图一起导入）">导入文件夹…</button>
+        <button class="ghost sm" id="msTexAdd" type="button" title="向当前模型补充贴图文件（补传后自动重载）">+ 贴图</button>
+      </div>
+      <div class="ms-tip">模型与贴图建议一起多选导入，或把整个模型文件夹拖进本页任意位置。</div>
+      <div class="stage3d" id="stage3d">
+        <div class="ms-hint" id="msHint"><strong>尚未导入模型</strong><span>点“导入 PMX / PMD 模型”<br>或直接把模型文件夹拖进来</span></div>
+        <div class="lc" id="lc">
+          <div class="lc-body" id="lcBody">
+            <div class="lc-row"><label>全局亮度</label><input type="range" id="lcMaster" min="0" max="250" value="100"><output id="lcMasterV">1.00</output></div>
+            <div class="lc-row"><label>环境光</label><input type="range" id="lcEnv" min="0" max="200" value="70"><output id="lcEnvV">0.70</output></div>
+            <div class="lc-row"><label>主光</label><input type="range" id="lcKey" min="0" max="200" value="70"><output id="lcKeyV">0.70</output></div>
+            <div class="lc-row"><label>补光</label><input type="range" id="lcFill" min="0" max="200" value="30"><output id="lcFillV">0.30</output></div>
+          </div>
+          <button class="lc-tab" id="lcTab" type="button">光照<span class="lc-arr" id="lcArr">▲</span></button>
+        </div>
+      </div>
+      <div class="ms-tools">
+        <button class="iconbtn" id="msReset" type="button">重置视角</button>
+        <button class="iconbtn" id="msGrid" type="button">网格</button>
+        <button class="iconbtn" id="msUnload" type="button" title="卸载当前模型">卸载</button>
+        <div class="ms-modelname" id="msName"></div>
+      </div>
+      <div class="matpanel" id="matPanel">
+        <div class="mp-head" id="mpHead">
+          <div class="mp-title">材质<span class="mc" id="mpCnt"></span></div>
+          <button class="mp-toggle" id="mpToggle" type="button">展开 ▾</button>
+        </div>
+        <div class="mp-body hidden" id="mpBody">
+          <div class="mp-actions"><button type="button" id="mpShowAll">全部显示</button></div>
+          <div class="mp-list" id="mpList"><div class="mp-empty" id="mpEmpty">导入模型后自动列出材质<br>点击材质行或直接点击模型可选择</div></div>
+        </div>
+      </div>
+      <div class="ms-export">
+        <button class="primary sm" id="msExport" type="button" disabled title="导出模型文件与已挂载超分结果的贴图（zip）">导出模型与贴图 (zip)</button>
+      </div>
+      <div class="ms-controls">左键/右键旋转 · 滚轮缩放 · 左键点模型选材质</div>
+    </div>
+  </div>
+
+  <div class="vresizer" id="vResizer" title="拖动调整宽度 · 双击收起/展开"></div>
+
+  <div class="viewer">
+    <div class="viewer-head">
+      <div class="brand">TextureUpscaler</div>
+      <a class="navlink" href="/pbr">渲染贴图</a>
+      <button class="iconbtn" id="modToggle" type="button">模型预览</button>
+      <div class="tabs">
+        <button class="tab" data-view="original">原图</button>
+        <button class="tab" data-view="preview">调整预览</button>
+        <button class="tab" data-view="result">超分结果</button>
+      </div>
+      <button class="iconbtn" id="cmpBtn" disabled>按住对比原图</button>
+      <div class="meta" id="meta"></div>
+      <button class="iconbtn" id="themeBtn">日间</button>
+    </div>
+
+    <div class="stage" id="stage">
+      <div class="drop-hint" id="hint"><strong>拖入图片，或点击选择</strong>支持 PNG / JPG / WebP / BMP</div>
+      <img id="img-original" class="hidden" alt="原图">
+      <img id="img-preview" class="hidden" alt="预览">
+      <img id="img-result" class="hidden" alt="结果">
+      <div class="imgzoom hidden" id="imgZoomBar">
+        <button type="button" id="zOut" title="缩小">−</button>
+        <span id="zPct">100%</span>
+        <button type="button" id="zIn" title="放大">+</button>
+        <button type="button" id="zFit" title="适应窗口">适应</button>
+      </div>
+      <div class="overlay hidden" id="overlay">
+        <div class="pcard">
+          <div class="stage-txt" id="stageTxt">处理中</div>
+          <div class="pbar"><div class="pfill" id="pfill"></div></div>
+          <div class="pmeta"><span id="ppct">0%</span><span id="ptime">已用 0s</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>超分设置</h2>
+    <div class="group">
+      <select id="model">
+        <option value="animevideov3" selected>AnimeVideo V3（动漫·2/3/4倍）</option>
+        <option value="x4plus-anime">Real-ESRGAN x4plus-anime（动漫·4倍）</option>
+        <option value="x4plus">Real-ESRGAN x4plus（通用照片·4倍）</option>
+      </select>
+    </div>
+    <div class="group"><div class="scale-row" id="scaleRow"></div></div>
+
+    <h2>基础调整</h2>
+    <div class="group">
+      <div class="row"><label>红 R</label><input type="range" id="r" min="0" max="200" value="100"><output id="rV">1.00</output></div>
+      <div class="row"><label>绿 G</label><input type="range" id="g" min="0" max="200" value="100"><output id="gV">1.00</output></div>
+      <div class="row"><label>蓝 B</label><input type="range" id="b" min="0" max="200" value="100"><output id="bV">1.00</output></div>
+    </div>
+    <div class="group">
+      <div class="row"><label>对比度</label><input type="range" id="contrast" min="0" max="200" value="100"><output id="contrastV">1.00</output></div>
+      <div class="row"><label>亮度</label><input type="range" id="brightness" min="0" max="200" value="100"><output id="brightnessV">1.00</output></div>
+      <div class="row"><label>饱和度</label><input type="range" id="saturation" min="0" max="200" value="100"><output id="saturationV">1.00</output></div>
+      <div class="row"><label>锐化</label><input type="range" id="sharpen" min="0" max="300" value="100"><output id="sharpenV">1.00</output></div>
+    </div>
+
+    <h2>导出</h2>
+    <div class="group">
+      <input type="text" id="outName" placeholder="导出文件名（留空自动命名）">
+    </div>
+    <div class="group">
+      <div class="seg" id="saveMode">
+        <button data-mode="new" class="active">存为新文件</button>
+        <button data-mode="replace">替换原图</button>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="ghost" id="resetBtn">重置</button>
+      <button class="primary" id="upscaleBtn" disabled>超分生成</button>
+    </div>
+    <div class="actions">
+      <button class="ghost" id="exportBtn" disabled style="flex:1">仅调整导出（原尺寸）</button>
+    </div>
+
+    <div class="result-bar" id="resultBar"><a id="downloadLink" href="#" download>下载结果图</a></div>
+    <div class="error" id="error"></div>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp,image/bmp" hidden>
+<input type="file" id="modelFile" accept=".pmx,.pmd,image/*" multiple hidden>
+<input type="file" id="modelFolder" webkitdirectory multiple hidden>
+<input type="file" id="modelTexFile" accept="image/*,.bmp" multiple hidden>
+
+<script src="/static/vendor/three.min.js"></script>
+<script src="/static/vendor/mmd-parser.js"></script>
+<script src="/static/vendor/MMDLoader.js"></script>
+<script src="/static/vendor/OrbitControls.js"></script>
+<script>
+const state = { imgId: null };
+const $ = (id) => document.getElementById(id);
+const stage = $('stage'), hint = $('hint'), overlay = $('overlay');
+const imgs = { original: $('img-original'), preview: $('img-preview'), result: $('img-result') };
+const tabs = document.querySelectorAll('.tab');
+const MODEL_SCALES = { 'animevideov3': [2,3,4], 'x4plus': [4], 'x4plus-anime': [4] };
+
+// ---- 主题 ----
+function applyTheme(mode) {
+  document.body.classList.toggle('light', mode === 'light');
+  $('themeBtn').textContent = mode === 'light' ? '夜间' : '日间';
+  localStorage.setItem('tu_theme', mode);
+}
+$('themeBtn').addEventListener('click', () => {
+  applyTheme(document.body.classList.contains('light') ? 'dark' : 'light');
+});
+applyTheme(localStorage.getItem('tu_theme') || 'dark');
+
+// ---- 缩放倍数 ----
+function renderScales() {
+  const scales = MODEL_SCALES[$('model').value];
+  const row = $('scaleRow');
+  row.innerHTML = '';
+  scales.forEach((s, i) => {
+    const b = document.createElement('button');
+    b.className = 'scale-btn' + (i === 0 ? ' active' : '');
+    b.textContent = s + '×'; b.dataset.scale = s;
+    b.onclick = () => { row.querySelectorAll('.scale-btn').forEach(x => x.classList.remove('active')); b.classList.add('active'); };
+    row.appendChild(b);
+  });
+}
+function currentScale() {
+  const a = $('scaleRow').querySelector('.scale-btn.active');
+  return a ? parseInt(a.dataset.scale, 10) : MODEL_SCALES[$('model').value][0];
+}
+// ---- 保存方式 ----
+let saveMode = 'new';
+$('saveMode').querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+  saveMode = b.dataset.mode;
+  $('saveMode').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+}));
+
+function params() {
+  return {
+    img_id: state.imgId, model: $('model').value, scale: currentScale(),
+    r: $('r').value/100, g: $('g').value/100, b: $('b').value/100,
+    contrast: $('contrast').value/100, brightness: $('brightness').value/100,
+    saturation: $('saturation').value/100, sharpen: $('sharpen').value/100,
+  };
+}
+[['r','rV'],['g','gV'],['b','bV'],['contrast','contrastV'],['brightness','brightnessV'],['saturation','saturationV'],['sharpen','sharpenV']]
+  .forEach(([id, outId]) => {
+    $(id).addEventListener('input', () => { $(outId).textContent = ($(id).value/100).toFixed(2); schedulePreview(); });
+    makeEditable(id, outId);
+  });
+
+let currentView = 'original';
+
+// 双击数字 -> 变输入框（带上下箭头），回车/失焦生效
+function makeEditable(sid, oid) {
+  const s = $(sid), o = $(oid);
+  o.title = '双击修改数值';
+  o.style.cursor = 'text';
+  o.addEventListener('dblclick', () => {
+    const min = +s.min/100, max = +s.max/100;
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.min = min; inp.max = max; inp.step = 0.05;
+    inp.value = (+s.value/100).toFixed(2);
+    inp.className = 'numedit';
+    o.replaceWith(inp);
+    inp.focus(); inp.select();
+    let done = false;
+    const commit = () => {
+      if (done) return; done = true;
+      let v = parseFloat(inp.value);
+      if (isNaN(v)) v = +s.value/100;
+      v = Math.min(max, Math.max(min, v));
+      s.value = Math.round(v*100);
+      s.dispatchEvent(new Event('input'));
+      inp.replaceWith(o);
+    };
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') commit();
+      if (e.key === 'Escape') { done = true; inp.replaceWith(o); }
+    });
+    inp.addEventListener('blur', commit);
+  });
+}
+
+// 按住对比原图
+const cmpBtn = $('cmpBtn');
+let cmpActive = false;
+function showOnly(name) { Object.entries(imgs).forEach(([k, img]) => img.classList.toggle('hidden', k !== name)); }
+cmpBtn.addEventListener('pointerdown', () => { if (!imgs.original.src) return; cmpActive = true; showOnly('original'); });
+['pointerup','pointerleave','pointercancel'].forEach(ev =>
+  cmpBtn.addEventListener(ev, () => { if (cmpActive) { cmpActive = false; showOnly(currentView); } }));
+
+let previewTimer = null;
+function schedulePreview() { if (!state.imgId) return; clearTimeout(previewTimer); previewTimer = setTimeout(doPreview, 250); }
+async function doPreview() {
+  if (!state.imgId) return;
+  const res = await fetch('/api/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params()) });
+  if (!res.ok) return;
+  const blob = await res.blob();
+  if (imgs.preview.src) URL.revokeObjectURL(imgs.preview.src);
+  imgs.preview.src = URL.createObjectURL(blob);
+  switchView('preview');
+}
+
+function switchView(name) {
+  currentView = name;
+  tabs.forEach(t => t.classList.toggle('active', t.dataset.view === name));
+  Object.entries(imgs).forEach(([k, img]) => img.classList.toggle('hidden', k !== name));
+  hint.classList.add('hidden');
+}
+tabs.forEach(t => t.addEventListener('click', () => {
+  const v = t.dataset.view;
+  if (v === 'original' && imgs.original.src) switchView('original');
+  if (v === 'preview' && imgs.preview.src) switchView('preview');
+  if (v === 'result' && imgs.result.src) switchView('result');
+}));
+
+async function handleFile(file) {
+  const fd = new FormData(); fd.append('file', file);
+  $('error').textContent = '';
+  const res = await fetch('/api/upload', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (!res.ok) { $('error').textContent = data.error || '上传失败'; return; }
+  state.imgId = data.id;
+  $('meta').textContent = data.width + ' × ' + data.height;
+  if (imgs.original.src) URL.revokeObjectURL(imgs.original.src);
+  imgs.original.src = URL.createObjectURL(file);
+  imgs.preview.src = ''; imgs.result.src = '';
+  $('upscaleBtn').disabled = false; $('exportBtn').disabled = false; $('cmpBtn').disabled = false;
+  $('resultBar').classList.remove('show');
+  switchView('original');
+  setTimeout(doPreview, 50);
+}
+stage.addEventListener('click', (e) => { if (!overlay.contains(e.target)) $('fileInput').click(); });
+stage.addEventListener('dragover', e => { e.preventDefault(); stage.classList.add('dragover'); });
+stage.addEventListener('dragleave', () => stage.classList.remove('dragover'));
+stage.addEventListener('drop', e => { e.preventDefault(); stage.classList.remove('dragover'); const f = e.dataTransfer.files[0]; if (f) handleFile(f); });
+$('fileInput').addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+let elapsedTimer = null, startTime = 0;
+function showOverlay(text, withBar) {
+  $('stageTxt').textContent = text; $('pfill').style.width = '0%'; $('ppct').textContent = '0%'; $('ptime').textContent = '已用 0s';
+  $('pfill').parentElement.classList.toggle('hidden', !withBar);
+  $('ppct').classList.toggle('hidden', !withBar);
+  overlay.classList.remove('hidden');
+  startTime = Date.now(); clearInterval(elapsedTimer);
+  elapsedTimer = setInterval(() => { $('ptime').textContent = '已用 ' + Math.floor((Date.now()-startTime)/1000) + 's'; }, 500);
+}
+function updateProgress(pct, txt) { $('pfill').style.width = pct + '%'; $('ppct').textContent = Math.round(pct) + '%'; if (txt) $('stageTxt').textContent = txt; }
+function hideOverlay() { clearInterval(elapsedTimer); overlay.classList.add('hidden'); }
+
+async function runProcess(upscale) {
+  if (!state.imgId) return;
+  $('error').textContent = '';
+  $('upscaleBtn').disabled = true; $('exportBtn').disabled = true;
+  showOverlay(upscale ? '超分中' : '处理中', upscale);
+  try {
+    const p = params();
+    p.upscale = upscale;
+    p.out_name = $('outName').value.trim();
+    p.replace_original = (saveMode === 'replace');
+    const res = await fetch('/api/process', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '处理失败');
+    if (data.status === 'done') finishResult(data.url, data.replaced);
+    else if (data.status === 'running') pollTask(data.task_id);
+  } catch (e) { $('error').textContent = e.message; hideOverlay(); }
+  finally { $('upscaleBtn').disabled = false; $('exportBtn').disabled = false; }
+}
+function finishResult(url, replaced) {
+  updateProgress(100, '完成');
+  setTimeout(() => {
+    if (replaced) {
+      const o = '/api/original/' + state.imgId + '?t=' + Date.now();
+      imgs.original.src = o; imgs.preview.src = ''; imgs.result.src = '';
+      imgs.original.onload = () => { $('meta').textContent = imgs.original.naturalWidth + ' × ' + imgs.original.naturalHeight; };
+      $('resultBar').classList.remove('show');
+      hideOverlay(); switchView('original');
+    } else {
+      imgs.result.src = url + '?t=' + Date.now();
+      $('downloadLink').href = url;
+      $('resultBar').classList.add('show');
+      hideOverlay(); switchView('result');
+    }
+  }, 300);
+}
+async function pollTask(taskId) {
+  for (let i = 0; i < 1200; i++) {
+    await new Promise(r => setTimeout(r, 600));
+    const res = await fetch('/api/task/' + taskId);
+    const data = await res.json();
+    if (data.status === 'done') { finishResult(data.url, data.replaced); return; }
+    if (data.status === 'error') { $('error').textContent = data.error || '超分失败'; hideOverlay(); return; }
+    updateProgress(data.progress || 0, data.stage);
+  }
+  $('error').textContent = '处理超时'; hideOverlay();
+}
+
+$('upscaleBtn').addEventListener('click', () => runProcess(true));
+$('exportBtn').addEventListener('click', () => runProcess(false));
+$('model').addEventListener('change', renderScales);
+$('resetBtn').addEventListener('click', () => {
+  ['r','g','b','contrast','brightness','saturation','sharpen'].forEach(id => { $(id).value = 100; $(id).dispatchEvent(new Event('input')); });
+});
+renderScales();
+</script>
+<script>
+/* ================= 模型预览（PMX/PMD）+ 贴图抽屉 模块 ================= */
+(function () {
+  'use strict';
+  if (typeof THREE === 'undefined' || !THREE.MMDLoader) {
+    console.warn('TextureUpscaler: 3D 依赖未加载，模型预览不可用');
+    return;
+  }
+  var $ = function (id) { return document.getElementById(id); };
+  var isFn = function (f) { return typeof f === 'function'; };
+  var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
+
+  /* ---- DOM 引用 ---- */
+  var texDock = $('texDock'), texTab = $('texTab'), texClose = $('texClose'),
+      texList = $('texList'), texEmpty = $('texEmpty'), texCnt = $('texCnt'),
+      texActions = $('texActions'), texSlotSel = $('texSlotSel'), texApplyBtn = $('texApply'),
+      modelSide = $('modelSide'), msClose = $('msClose'), modToggle = $('modToggle'),
+      msImport = $('msImport'), msFolder = $('msFolder'), msTexAdd = $('msTexAdd'),
+      stage3d = $('stage3d'), msHint = $('msHint'), msName = $('msName'),
+      msReset = $('msReset'), msGrid = $('msGrid'), msUnload = $('msUnload'),
+      modelFile = $('modelFile'), modelFolder = $('modelFolder'), modelTexFile = $('modelTexFile'),
+      stageMain = $('stage'), vResizer = $('vResizer'),
+      mpPanel = $('matPanel'), mpHead = $('mpHead'), mpBody = $('mpBody'),
+      mpList = $('mpList'), mpToggle = $('mpToggle'), mpCnt = $('mpCnt'), mpShowAll = $('mpShowAll'),
+      msExport = $('msExport');
+
+  var RE_MODEL = /\.(pmx|pmd)$/i;
+  var RE_TOON = /^toon(0[0-9]|10)\.bmp$/i;
+
+  var S = { renderer: null, scene: null, camera: null, controls: null, grid: null,
+            mesh: null, sid: null, modelRel: null, modelName: '',
+            uploaded: [], diffuse: new Map(), applied: new Map(),
+            pendingBase: null, lastUpload: { id: null, name: null }, lastResult: null, dragBase: null,
+            gridOn: true, firstImport: true, loading: false, mw: 320,
+            light: { master: 1, env: 0.7, key: 0.7, fill: 0.3 },
+            matList: [], selMat: -1 };
+
+  /* ---- 小工具 ---- */
+  function urlBase(u) {
+    try { u = decodeURIComponent(String(u || '')); } catch (e) {}
+    u = String(u).replace(/\\/g, '/');
+    var i = u.lastIndexOf('/');
+    return i < 0 ? u : u.slice(i + 1);
+  }
+  function lower(s) { return String(s == null ? '' : s).toLowerCase(); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function srvUrl(rel) {
+    return '/models/' + S.sid + '/' + String(rel).split('/').map(encodeURIComponent).join('/');
+  }
+  function showHint(html, isErr) {
+    if (html == null) { msHint.classList.add('hidden'); return; }
+    msHint.innerHTML = html;
+    msHint.classList.remove('hidden');
+    if (isErr) msHint.classList.add('err'); else msHint.classList.remove('err');
+  }
+  function setLoading(flag, text) {
+    S.loading = flag;
+    if (flag && text) showHint('<strong>' + esc(text) + '</strong><span>请稍候…</span>', false);
+  }
+
+  /* ---- 纹理请求记录（识别贴图清单与缺失） ---- */
+  var texLog = [], refreshTimer = null;
+  function scheduleDrawer() {
+    if (refreshTimer) return;
+    refreshTimer = setTimeout(function () { refreshTimer = null; refreshDrawer(); }, 180);
+  }
+  var texHandler = {
+    load: function (url, onLoad, onProgress, onError) {
+      var rec = { url: url, ok: false };
+      texLog.push(rec);
+      var tex = new THREE.Texture();   // 与交给 onLoad 的必须是同一对象
+      tex.name = url;
+      var img = new Image();
+      img.decoding = 'async';
+      img.onload = function () {
+        rec.ok = true;
+        tex.image = img;
+        tex.needsUpdate = true;
+        if (isFn(onLoad)) onLoad(tex);
+        scheduleDrawer();
+      };
+      img.onerror = function (ev) {
+        rec.ok = false;
+        if (isFn(onError)) onError(ev);
+        scheduleDrawer();
+      };
+      img.src = url;
+      return tex;
+    }
+  };
+  var lm = new THREE.LoadingManager();
+  lm.addHandler(/\/models\/[0-9a-f]{32}\//i, texHandler);
+  var mmdLoader = new THREE.MMDLoader(lm);
+
+  function prettyRel(u) {
+    try { u = decodeURIComponent(u); } catch (e) {}
+    u = String(u).replace(/\\/g, '/');
+    var pre = '/models/' + S.sid + '/';
+    if (S.sid && u.indexOf(pre) === 0) u = u.slice(pre.length);
+    return u;
+  }
+  function collectDiffuse() {
+    S.diffuse.clear();
+    if (!S.mesh) return;
+    var mats = Array.isArray(S.mesh.material) ? S.mesh.material : [S.mesh.material];
+    mats.forEach(function (m) {
+      if (!m || !m.map) return;
+      var u = m.map.name || '';
+      if (u.indexOf('/models/') < 0) return;
+      var b = lower(urlBase(u));
+      if (RE_TOON.test(b) || /\.(sph|spa|tga)$/i.test(b)) return;
+      if (!S.diffuse.has(b)) S.diffuse.set(b, { url: u, ok: true });
+    });
+    texLog.forEach(function (r) {
+      if (r.url.indexOf('/models/') < 0) return;
+      var b = lower(urlBase(r.url));
+      if (RE_TOON.test(b) || /\.(sph|spa|tga)$/i.test(b)) return;
+      if (S.diffuse.has(b)) {
+        var e = S.diffuse.get(b);
+        if (e.ok && !r.ok) e.ok = false;   // 加载失败 → 标记缺失
+      } else {
+        S.diffuse.set(b, { url: r.url, ok: r.ok });
+      }
+    });
+  }
+
+
+  /* ---- 一键导出：模型 + 已挂载超分贴图 (zip) ---- */
+  function enableExport(on) {
+    if (msExport) msExport.disabled = !on;
+  }
+  function doExport() {
+    if (!S.sid || !S.modelRel) { toast('没有可导出的模型，请先导入', true); return; }
+    if (!msExport) return;
+    var oldTxt = msExport.textContent;
+    msExport.disabled = true;
+    msExport.textContent = '打包中…';
+    function restore() { if (msExport) { msExport.disabled = false; msExport.textContent = oldTxt; } }
+    window.fetch('/api/model-files/' + S.sid)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.files) throw new Error('读取模型文件列表失败');
+        var overrides = [];
+        S.applied.forEach(function (url, base) {
+          if (!url) return;
+          for (var i = 0; i < d.files.length; i++) {
+            if (urlBase(d.files[i].rel).toLowerCase() === base) {
+              overrides.push({ rel: d.files[i].rel, url: url });
+              break;
+            }
+          }
+        });
+        return window.fetch('/api/export-model', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sid: S.sid, model_rel: S.modelRel, overrides: overrides })
+        });
+      })
+      .then(function (r) {
+        if (!r.ok) return r.json().then(function (e) { throw new Error((e && e.error) || '导出失败'); });
+        return r.json();
+      })
+      .then(function (d) {
+        if (!d || !d.file || !(d.size > 0)) throw new Error('导出结果为空，请重试');
+        toast('导出完成：' + (d.path || d.file) + '（已打开所在文件夹）');
+        try { window.fetch('/api/open-export/' + encodeURIComponent(d.file)).catch(function () {}); } catch (e) {}
+      })
+      .catch(function (e) { toast('导出失败：' + ((e && e.message) || e), true); })
+      .then(function () { restore(); });
+  }
+
+  /* ---- 材质列表（与 3D 材质分组一一对应） ---- */
+  function collectMatList() {
+    S.matList = [];
+    if (!S.mesh) return;
+    var mats = S.mesh.material;
+    if (!Array.isArray(mats)) mats = mats ? [mats] : [];
+    for (var i = 0; i < mats.length; i++) {
+      var m = mats[i];
+      var bases = [];
+      if (m && m.map) {
+        var b = lower(urlBase(m.map.name || ''));
+        if (b) bases.push(b);
+      }
+      var col = (m && m.color) ? '#' + m.color.getHexString() : '#8a8f98';
+      var nm = bases.length ? urlBase(bases[0]) : '材质 ' + (i + 1);
+      S.matList.push({ idx: i, bases: bases, name: nm, color: col, visible: m ? m.visible !== false : true });
+    }
+    if (S.selMat >= S.matList.length) S.selMat = -1;
+  }
+  function renderMatPanel() {
+    if (!mpList) return;
+    if (mpCnt) mpCnt.textContent = S.matList.length ? '(' + S.matList.length + ')' : '';
+    if (!S.matList.length) {
+      mpList.innerHTML = '<div class="mp-empty">导入模型后自动列出材质<br>点击材质行或直接点击模型可选择</div>';
+      return;
+    }
+    var html = S.matList.map(function (it) {
+      var act = it.idx === S.selMat ? ' active' : '';
+      var off = it.visible ? '' : ' off';
+      var chk = it.visible ? ' checked' : '';
+      var tc = it.bases.length ? it.bases.length + '张' : '';
+      return '<div class="mp-row' + act + off + '" data-i="' + it.idx + '">'
+        + '<input type="checkbox"' + chk + ' title="显示/隐藏该材质">'
+        + '<span class="sw" style="background:' + esc(it.color) + '"></span>'
+        + '<span class="nm" title="' + esc((it.idx + 1) + ' · ' + it.name) + '">' + (it.idx + 1) + ' · ' + esc(it.name) + '</span>'
+        + '<span class="tc">' + tc + '</span></div>';
+    }).join('');
+    mpList.innerHTML = html;
+    Array.prototype.forEach.call(mpList.querySelectorAll('.mp-row'), function (row) {
+      var i = parseInt(row.getAttribute('data-i'), 10);
+      var cb = row.querySelector('input[type=checkbox]');
+      row.addEventListener('click', function (e) {
+        if (cb && e.target === cb) return;
+        selectMaterial(i);
+      });
+      if (cb) {
+        cb.addEventListener('click', function (e) { e.stopPropagation(); });
+        cb.addEventListener('change', function () { toggleMatShow(i, cb.checked); });
+      }
+    });
+  }
+  function selectMaterial(i) {
+    if (i < 0 || !S.matList[i]) return;
+    S.selMat = (S.selMat === i) ? -1 : i;   // 再点一次取消
+    renderMatPanel();
+    refreshDrawer();
+    if (S.selMat >= 0) setDock(true);
+    if (S.selMat >= 0 && texList) {
+      var hit = texList.querySelector('.tex-item.hit');
+      if (hit) { try { hit.scrollIntoView({ block: 'nearest' }); } catch (e) {} }
+    }
+  }
+  function toggleMatShow(i, show) {
+    if (!S.matList[i]) return;
+    S.matList[i].visible = !!show;
+    var mats = S.mesh && S.mesh.material;
+    if (mats) {
+      if (Array.isArray(mats)) { if (mats[i]) mats[i].visible = !!show; }
+      else if (i === 0) mats.visible = !!show;
+    }
+    renderMatPanel();
+  }
+  function showAllMats() {
+    var mats = S.mesh && S.mesh.material;
+    S.matList.forEach(function (it) { it.visible = true; });
+    if (mats) {
+      var arr = Array.isArray(mats) ? mats : [mats];
+      arr.forEach(function (m) { if (m) m.visible = true; });
+    }
+    renderMatPanel();
+  }
+  function matIndexFromHit(hit) {
+    if (hit && hit.face && hit.face.materialIndex !== undefined) return hit.face.materialIndex;
+    var g = S.mesh && S.mesh.geometry;
+    if (!g || !hit || !hit.face) return 0;
+    var tri = -1;
+    if (g.index) {
+      var pos = Array.prototype.indexOf.call(g.index.array, hit.face.a);
+      if (pos >= 0) tri = Math.floor(pos / 3);
+    } else {
+      tri = Math.floor(hit.face.a / 3);
+    }
+    if (tri >= 0) {
+      var groups = g.groups || [];
+      for (var gi = 0; gi < groups.length; gi++) {
+        var gr = groups[gi];
+        if (tri >= gr.start / 3 && tri < (gr.start + gr.count) / 3) return gr.materialIndex;
+      }
+    }
+    return 0;
+  }
+  function wireModelPick() {
+    if (!S.renderer || !S.renderer.domElement) return;
+    var cv = S.renderer.domElement;
+    var px = 0, py = 0;
+    cv.addEventListener('pointerdown', function (e) { px = e.clientX; py = e.clientY; });
+    cv.addEventListener('click', function (e) {
+      if (Math.abs(e.clientX - px) + Math.abs(e.clientY - py) > 5) return; // 旋转拖拽后不触发
+      if (!S.mesh || !S.matList.length || !S.camera) return;
+      var rect = cv.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) return;
+      var ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1,
+                                  -((e.clientY - rect.top) / rect.height) * 2 + 1);
+      var ray = new THREE.Raycaster();
+      ray.setFromCamera(ndc, S.camera);
+      var hits = ray.intersectObject(S.mesh, false);
+      var i, mi;
+      for (i = 0; i < hits.length; i++) {
+        mi = matIndexFromHit(hits[i]);
+        if (S.matList[mi] && S.matList[mi].visible) { selectMaterial(mi); return; }
+      }
+      if (S.selMat !== -1) {   // 点到空白处取消选中
+        S.selMat = -1;
+        renderMatPanel();
+        refreshDrawer();
+      }
+    });
+  }
+
+  /* ---- 贴图抽屉渲染 ---- */
+  function refreshDrawer() {
+    collectDiffuse();
+    var entries = [];
+    S.diffuse.forEach(function (v, b) { entries.push({ base: b, url: v.url, ok: v.ok }); });
+    entries.sort(function (a, b) { return a.base < b.base ? -1 : 1; });
+    var html = '', n = entries.length;
+    entries.forEach(function (it) {
+      var up = S.applied.has(it.base);
+      var cls = 'tex-item' + (up ? ' up' : '') + (it.ok ? '' : ' missing');
+      var sel = S.matList[S.selMat];
+      if (S.selMat >= 0 && sel && sel.bases.indexOf(it.base) >= 0) cls += ' hit';
+      else if (S.selMat >= 0) cls += ' dim';
+      var src = up ? S.applied.get(it.base) : it.url;
+      if (!src) src = '';
+      var st = !it.ok ? '文件缺失，可用“+贴图”补传'
+        : (up ? '已挂载超分结果' : '拖到中间区域即可超分');
+      html += '<div class="' + cls + '" draggable="false" data-base="' + esc(it.base) + '">'
+        + '<img class="th" alt="" src="' + esc(src) + '" loading="lazy">'
+        + '<div class="ti"><div class="tn" title="' + esc(prettyRel(it.url)) + '">' + esc(prettyRel(it.url)) + '</div>'
+        + '<div class="ts">' + st + '</div></div></div>';
+    });
+    if (!n) {
+      texEmpty.style.display = 'block';
+      texList.style.display = 'none';
+      texList.innerHTML = '';
+    } else {
+      texEmpty.style.display = 'none';
+      texList.style.display = 'flex';
+      texList.innerHTML = html;
+    }
+    texCnt.textContent = n ? ' · ' + n : '';
+    bindDrawerDrag();
+    refreshActions();
+  }
+  function bindDrawerDrag() {
+    // 手动拖拽由 texList 上的 pointer 事件统一处理（见 initManualDrag），此处只绑定双击
+    $$('.tex-item', texList).forEach(function (item) {
+      if (item._tuBound) return;
+      item._tuBound = true;
+      item.addEventListener('dblclick', function () {   // 双击也可直接发送到中间
+        var base = item.getAttribute('data-base');
+        if (base && !item.classList.contains('missing')) startTextureUpscale(base);
+      });
+    });
+  }
+
+  /* ---- 手动拖拽：指针按下 -> 移动出阈值 -> 幽灵图跟随 -> 松手即发送 ---- */
+  function initManualDrag() {
+    if (initManualDrag._done || !texList) return;
+    initManualDrag._done = true;
+    var man = null;
+    var ghostNode = null;   // 幽灵图单独维护，清理时不受 man 状态影响
+    function removeGhost() {
+      if (ghostNode && ghostNode.parentNode) {
+        try { ghostNode.parentNode.removeChild(ghostNode); } catch (e) {}
+      }
+      ghostNode = null;
+    }
+    function makeGhost(item) {
+      removeGhost();
+      var g = item.cloneNode(true);
+      g.removeAttribute('id');
+      g.style.position = 'fixed';
+      g.style.width = '132px';
+      g.style.zIndex = '9999';
+      g.style.pointerEvents = 'none';
+      g.style.opacity = '0.92';
+      g.style.top = '-1000px';
+      g.style.left = '-1000px';
+      g.style.margin = '0';
+      g.style.boxShadow = '0 8px 22px rgba(0,0,0,.35)';
+      document.body.appendChild(g);
+      ghostNode = g;
+      return g;
+    }
+    function pointInStage(x, y) {
+      if (!stageMain) return false;
+      var el = document.elementFromPoint(x, y);
+      return !!el && (el === stageMain || stageMain.contains(el));
+    }
+    texList.addEventListener('pointerdown', function (e) {
+      if (e.button !== 0 || !e.target) return;
+      var t = e.target;
+      var item = (t.closest ? t.closest('.tex-item') : null);
+      if (!item || !texList.contains(item) || item.classList.contains('missing')) return;
+      var base = item.getAttribute('data-base');
+      if (!base) return;
+      man = { base: base, sx: e.clientX, sy: e.clientY, on: false, item: item };
+      if (texList.setPointerCapture) {
+        try { texList.setPointerCapture(e.pointerId); } catch (err) {}
+      }
+    });
+    window.addEventListener('pointermove', function (e) {
+      if (!man) return;
+      if (!man.on) {
+        if (Math.abs(e.clientX - man.sx) + Math.abs(e.clientY - man.sy) < 6) return;
+        man.on = true;
+        makeGhost(man.item);
+        if (man.item) man.item.classList.add('dragging');
+      }
+      if (ghostNode) {
+        ghostNode.style.left = (e.clientX - 6) + 'px';
+        ghostNode.style.top = (e.clientY - 6) + 'px';
+      }
+      if (stageMain) stageMain.classList.toggle('dragover', pointInStage(e.clientX, e.clientY));
+    });
+    window.addEventListener('pointerup', function (e) {
+      if (!man) return;
+      var m = man;
+      man = null;
+      removeGhost();          // 先删幽灵图，再触发上传
+      if (m.item) m.item.classList.remove('dragging');
+      if (stageMain) stageMain.classList.remove('dragover');
+      if (!m.on) return;
+      var el = document.elementFromPoint(e.clientX, e.clientY);
+      var overDock = !!(el && texDock && (el === texDock || texDock.contains(el)));
+      if (overDock) return;
+      startTextureUpscale(m.base);
+    });
+    window.addEventListener('pointercancel', function () {
+      man = null;
+      removeGhost();
+      if (stageMain) stageMain.classList.remove('dragover');
+    });
+    window.addEventListener('blur', function () {
+      man = null;
+      removeGhost();
+      if (stageMain) stageMain.classList.remove('dragover');
+    });
+    window.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        man = null;
+        removeGhost();
+        if (stageMain) stageMain.classList.remove('dragover');
+      }
+    });
+  }
+  initManualDrag();
+  function refreshActions() {
+    var show = !!S.mesh && !!S.sid && !!S.lastResult;
+    texActions.classList.toggle('hidden', !show);
+    if (!show) return;
+    var bases = [];
+    S.diffuse.forEach(function (v, b) { bases.push(b); });
+    bases.sort();
+    var cur = lower(S.pendingBase || (S.lastUpload && S.lastUpload.name ? urlBase(S.lastUpload.name) : '') || '');
+    if (!cur || bases.indexOf(cur) < 0) cur = bases[0] || '';
+    var sel = bases.map(function (b) {
+      return '<option value="' + esc(b) + '"' + (b === cur ? ' selected' : '') + '>' + esc(urlBase(b)) + '</option>';
+    }).join('');
+    texSlotSel.innerHTML = sel;
+  }
+
+  /* ---- 超分结果挂回模型 ---- */
+  function applyTexture(base, url) {
+    if (!S.mesh) return 0;
+    var key = lower(base);
+    var mats = Array.isArray(S.mesh.material) ? S.mesh.material : [S.mesh.material];
+    var hits = 0;
+    var bust = url + (url.indexOf('?') < 0 ? '?t=' : '&t=') + Date.now();
+    mats.forEach(function (m) {
+      if (!m || !m.map) return;
+      var curSrc = m.map.name || (m.map.image && (m.map.image.currentSrc || m.map.image.src)) || '';
+      if (lower(urlBase(curSrc)) !== key) return;
+      hits++;
+      (function (mm) {
+        new THREE.TextureLoader().load(bust, function (t) {
+          t.flipY = false;
+          t.wrapS = THREE.RepeatWrapping;
+          t.wrapT = THREE.RepeatWrapping;
+          t.name = url;
+          if (mm.map) { try { mm.map.dispose(); } catch (e) {} }
+          mm.map = t;
+          mm.needsUpdate = true;
+        }, undefined, function () { console.warn('挂载贴图失败: ' + url); });
+      })(m);
+    });
+    return hits;
+  }
+  function findUploadedFile(base) {
+    var b = lower(base);
+    for (var i = 0; i < S.uploaded.length; i++) {
+      if (lower(urlBase(S.uploaded[i].rel)) === b) return S.uploaded[i].file;
+    }
+    return null;
+  }
+  function startTextureUpscale(base) {
+    var f = findUploadedFile(base);
+    if (!f) {
+      toast('没有该贴图的本地文件记录：' + base + '，请重新导入一次模型', true);
+      return;
+    }
+    S.pendingBase = lower(base);
+    toast('已发送到超分区：' + (f.name || base));
+    try {
+      if (isFn(window.handleFile)) window.handleFile(f);
+      else throw new Error('页面主流程不可用');
+    } catch (err) {
+      toast('发送失败：' + ((err && err.message) || err), true);
+    }
+  }
+  var toastEl = null;
+  function toast(msg, isErr) {
+    if (!toastEl) {
+      toastEl = document.createElement('div');
+      toastEl.id = 'tuToast';
+      toastEl.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;' +
+        'background:var(--panel);color:var(--text);border:1px solid var(--line-strong);' +
+        'padding:8px 18px;border-radius:9px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.35);' +
+        'pointer-events:none;transition:opacity .35s;max-width:80vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      document.body.appendChild(toastEl);
+    }
+    toastEl.textContent = msg;
+    toastEl.style.color = isErr ? '#e57373' : 'var(--text)';
+    toastEl.style.opacity = '1';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { toastEl.style.opacity = '0'; }, 2000);
+  }
+
+  /* ---- 3D 场景 ---- */
+  function cssColor() {
+    return getComputedStyle(document.body).getPropertyValue('--bg').trim() || '#17181b';
+  }
+  function resize() {
+    if (!S.renderer || !S.camera) return;
+    var w = stage3d.clientWidth || 1, h = stage3d.clientHeight || 1;
+    if (w < 2 || h < 2) return;
+    S.renderer.setSize(w, h, false);
+    S.camera.aspect = w / h;
+    S.camera.updateProjectionMatrix();
+  }
+  function animate() {
+    requestAnimationFrame(animate);
+    if (S.controls) S.controls.update();
+    if (S.renderer && S.scene) S.renderer.render(S.scene, S.camera);
+  }
+  function init3D() {
+    if (S.renderer) return;
+    try {
+      S.renderer = new THREE.WebGLRenderer({ antialias: true });
+    } catch (e) {
+      showHint('<strong>无法创建 3D 预览（WebGL 不可用）</strong><span>' + esc(e.message || '') + '</span>', true);
+      return;
+    }
+    S.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    var cv = S.renderer.domElement;
+    cv.style.position = 'absolute';
+    cv.style.left = '0';
+    cv.style.top = '0';
+    stage3d.appendChild(cv);
+    resize();
+    S.scene = new THREE.Scene();
+    S.scene.background = new THREE.Color(cssColor());
+    S.camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100000);
+    S.camera.position.set(0, 4, 24);
+    S.hemi = new THREE.HemisphereLight(0xffffff, 0x445566, 1);
+    S.scene.add(S.hemi);
+    S.keyL = new THREE.DirectionalLight(0xffffff, 1);
+    S.keyL.position.set(2, 3, 1.5);
+    S.scene.add(S.keyL);
+    S.rim = new THREE.DirectionalLight(0xffffff, 1);
+    S.rim.position.set(-2, 1, -2);
+    S.scene.add(S.rim);
+    applyLight();
+    S.controls = new THREE.OrbitControls(S.camera, cv);
+    S.controls.enableDamping = true;
+    S.controls.dampingFactor = 0.08;
+    S.controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+    S.controls.touches = { ONE: THREE.MOUSE.ROTATE, TWO: THREE.MOUSE.DOLLY_PAN };
+    S.controls.target.set(0, 1, 0);
+    cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    resize();
+    animate();
+  }
+  function addGrid(r, groundY) {
+    if (S.grid) { S.scene.remove(S.grid); S.grid = null; }
+    if (!S.gridOn) return;
+    var gs = Math.max(r * 2.5, 2);
+    S.grid = new THREE.GridHelper(gs, 12, 0x7a8a9c, 0x39424e);
+    S.grid.position.y = groundY;
+    S.scene.add(S.grid);
+  }
+  function fitCamera() {
+    if (!S.mesh) return;
+    S.mesh.updateMatrixWorld(true);
+    var box = new THREE.Box3().setFromObject(S.mesh);
+    var center = new THREE.Vector3();
+    box.getCenter(center);
+    var size = new THREE.Vector3();
+    box.getSize(size);
+    var r = Math.max(size.x, size.y, size.z) * 0.5;
+    if (!(r > 0)) r = 1;
+    addGrid(r, box.min.y);
+    S.controls.target.copy(center);
+    var dir = new THREE.Vector3(1, 0.55, 1).normalize();
+    S.camera.position.copy(center).addScaledVector(dir, r * 3.6);
+    S.camera.near = Math.max(r / 500, 0.001);
+    S.camera.far = r * 60;
+    S.camera.updateProjectionMatrix();
+    S.controls.minDistance = r * 0.2;
+    S.controls.maxDistance = r * 12;
+    S.controls.update();
+  }
+  function disposeMesh() {
+    if (!S.mesh) return;
+    try {
+      S.scene.remove(S.mesh);
+      var g = S.mesh.geometry;
+      if (g) g.dispose();
+      var mats = Array.isArray(S.mesh.material) ? S.mesh.material : [S.mesh.material];
+      mats.forEach(function (m) {
+        if (!m) return;
+        [m.map, m.envMap, m.gradientMap, m.alphaMap].forEach(function (t) {
+          if (t) { try { t.dispose(); } catch (e) {} }
+        });
+        if (isFn(m.dispose)) m.dispose();
+      });
+    } catch (e) {}
+    S.mesh = null;
+  }
+
+  function applyLight() {
+    if (!S.scene || !S.hemi || !S.light) return;
+    var l = S.light;
+    S.hemi.intensity = l.env * l.master;
+    S.keyL.intensity = l.key * l.master;
+    S.rim.intensity = l.fill * l.master;
+  }
+  function bindLightCtrl() {
+    var lc = $('lc'), tab = $('lcTab'), arr = $('lcArr');
+    if (!lc || !tab) return;
+    var cfg = [
+      ['lcMaster', 'lcMasterV', 'master'],
+      ['lcEnv', 'lcEnvV', 'env'],
+      ['lcKey', 'lcKeyV', 'key'],
+      ['lcFill', 'lcFillV', 'fill']
+    ];
+    cfg.forEach(function (c) {
+      var inp = $(c[0]), out = $(c[1]);
+      if (!inp || !out) return;
+      inp.addEventListener('input', function () {
+        var v = parseFloat(inp.value) / 100;
+        S.light[c[2]] = v;
+        out.textContent = v.toFixed(2);
+        applyLight();
+      });
+    });
+    tab.addEventListener('click', function () {
+      var open = lc.classList.toggle('open');
+      if (arr) arr.textContent = open ? '▼' : '▲';
+    });
+  }
+
+  /* ---- 模型导入 / 载入 ---- */
+  function loadModelIntoScene(rel) {
+    if (!S.sid || !rel) return;
+    var url = srvUrl(rel);
+    texLog = [];   // 每次重新解析都重建纹理请求记录
+    setLoading(true, '载入模型…');
+    mmdLoader.load(url, function (mesh) {
+      setLoading(false);
+      showHint(null);
+      disposeMesh();
+      S.mesh = mesh;
+      S.scene.add(mesh);
+      try { fitCamera(); } catch (e) { console.warn('[模型预览] 视角适配失败', e); }
+      collectDiffuse();
+      collectMatList();
+      renderMatPanel();
+      var miss = 0;
+      S.diffuse.forEach(function (v) { if (!v.ok) miss++; });
+      msName.textContent = S.modelName + (miss ? ' · ' + miss + ' 张贴图缺失' : '');
+      setSide(true);
+      if (S.firstImport) { S.firstImport = false; setDock(true); }
+      refreshDrawer();
+      enableExport(true);
+    }, undefined, function (err) {
+      // MMDLoader 内部对个别资源会回调无信息的 ProgressEvent，不算失败
+      if (err && typeof err === 'object' && err.isTrusted === true && !err.message && !err.status) {
+        console.warn('[模型预览] 忽略一个无信息的内部错误事件');
+        return;
+      }
+      setLoading(false);
+      showHint('<strong>模型载入失败</strong><span>' + esc((err && (err.message || err)) || '未知错误') + '</span>', true);
+    });
+  }
+  function importModel(list) {
+    if (!list || !list.length) return;
+    var models = list.filter(function (it) { return RE_MODEL.test(it.rel); });
+    if (!models.length) {
+      showHint('<strong>没有找到模型文件</strong><span>需要 .pmx 或 .pmd 文件</span>', true);
+      return;
+    }
+    models.sort(function (a, b) {
+      return (lower(a.rel).indexOf('.pmd') >= 0 ? 1 : 0) - (lower(b.rel).indexOf('.pmd') >= 0 ? 1 : 0);
+    });
+    var model = models[0];
+    var fd = new FormData();
+    var seen = {};
+    list.forEach(function (it) {
+      var k = lower(it.rel);
+      if (seen[k]) return;
+      seen[k] = true;
+      fd.append('files', it.file);
+      fd.append('paths', it.rel);
+    });
+    S.pendingBase = null;
+    setLoading(true, '上传模型与贴图…');
+    window.fetch('/api/model-upload', { method: 'POST', body: fd }).then(function (res) {
+      return res.json();
+    }).then(function (d) {
+      if (!d || !d.sid) throw new Error((d && d.error) || '上传失败');
+      S.sid = d.sid;
+      list.forEach(function (it) {
+        var k = lower(it.rel);
+        var hit = S.uploaded.filter(function (o) { return lower(o.rel) === k; });
+        if (!hit.length) S.uploaded.push({ rel: it.rel, file: it.file });
+      });
+      S.modelRel = model.rel;
+      S.modelName = urlBase(model.rel);
+      S.applied.clear();
+      texLog = [];
+      loadModelIntoScene(model.rel);
+    }).catch(function (e) {
+      setLoading(false);
+      showHint('<strong>模型导入失败</strong><span>' + esc((e && e.message) || e) + '</span>', true);
+    });
+  }
+  function uploadExtra(list) {
+    if (!S.sid || !S.modelRel) {
+      showHint('<strong>请先导入模型</strong><span>补传贴图需要先有模型会话</span>', true);
+      return;
+    }
+    var fd = new FormData();
+    fd.append('sid', S.sid);
+    var seen = {}, imgs = [];
+    list.forEach(function (it) {
+      var k = lower(it.rel);
+      if (seen[k] || RE_MODEL.test(k)) return;
+      seen[k] = true;
+      fd.append('files', it.file);
+      fd.append('paths', it.rel);
+      imgs.push(it);
+    });
+    if (!imgs.length) return;
+    setLoading(true, '补传贴图…');
+    window.fetch('/api/model-upload', { method: 'POST', body: fd }).then(function (res) {
+      return res.json();
+    }).then(function (d) {
+      if (!d || !d.sid) throw new Error((d && d.error) || '上传失败');
+      imgs.forEach(function (it) {
+        var k = lower(it.rel);
+        var hit = S.uploaded.filter(function (o) { return lower(o.rel) === k; });
+        if (!hit.length) S.uploaded.push({ rel: it.rel, file: it.file });
+      });
+      S.applied.clear();
+      loadModelIntoScene(S.modelRel);
+    }).catch(function (e) {
+      setLoading(false);
+      showHint('<strong>补传失败</strong><span>' + esc((e && e.message) || e) + '</span>', true);
+    });
+  }
+  function toList(fl) {
+    var out = [];
+    for (var i = 0; i < fl.length; i++) {
+      var f = fl[i];
+      out.push({ rel: f.webkitRelativePath || f.name, file: f });
+    }
+    return out;
+  }
+
+  /* ---- 自动/手动挂载 ---- */
+  function maybeAutoApply() {
+    if (!S.mesh || !S.lastResult) return;
+    var upName = S.lastUpload && S.lastUpload.name;
+    var key = lower(S.pendingBase || (upName ? urlBase(upName) : ''));
+    if (!key) return;
+    var has = false;
+    S.diffuse.forEach(function (v, b) { if (b === key) has = true; });
+    if (!has) { S.pendingBase = null; return; }
+    var effUrl = S.lastResult.url;
+    if (S.lastResult.replaced && S.lastUpload && S.lastUpload.id) {
+      effUrl = '/api/original/' + S.lastUpload.id + '?t=' + Date.now();
+    }
+    var hits = applyTexture(key, effUrl);
+    if (hits) S.applied.set(key, effUrl);
+    S.pendingBase = null;
+  }
+
+  /* ---- 加载期未捕获异常直接显示到预览区 ---- */
+  window.addEventListener('error', function (e) {
+    if (S.loading) {
+      setLoading(false);
+      showHint('<strong>载入出错</strong><span>' + esc((e && e.message) || '未知脚本错误') + '</span>', true);
+    }
+    console.error('[模型预览]', e && e.error ? e.error : e);
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e && e.reason;
+    var msg = (r && (r.message || r)) || '未处理的 Promise 错误';
+    if (S.loading) {
+      setLoading(false);
+      showHint('<strong>载入出错</strong><span>' + esc(msg) + '</span>', true);
+    }
+    console.error('[模型预览]', r);
+  });
+
+  /* ---- 监听原页面上传 / 完成，用于自动挂载 ---- */
+  if (window.fetch) {
+    var origFetch = window.fetch;
+    window.fetch = function () {
+      var args = arguments;
+      var input = args[0], init = args[1] || {};
+      var u = typeof input === 'string' ? input : (input && input.url) || '';
+      var p = origFetch.apply(this, args);
+      if (u.indexOf('/api/upload') >= 0) {
+        p.then(function (resp) {
+          try {
+            resp.clone().json().then(function (d) {
+              if (d && d.id) {
+                var name = null;
+                try {
+                  var b = init.body;
+                  if (b && typeof FormData !== 'undefined' && b instanceof FormData) {
+                    var f = b.get('file');
+                    if (f) name = f.name;
+                  }
+                } catch (e) {}
+                S.lastUpload = { id: d.id, name: name };
+              }
+            }).catch(function () {});
+          } catch (e) {}
+        }).catch(function () {});
+      }
+      return p;
+    };
+  }
+  if (isFn(window.finishResult)) {
+    var origFinish = window.finishResult;
+    window.finishResult = function (url, replaced) {
+      var r;
+      try { r = origFinish(url, replaced); } catch (e) { r = undefined; }
+      var eff = url;
+      if (replaced && S.lastUpload && S.lastUpload.id) eff = '/api/original/' + S.lastUpload.id + '?t=' + Date.now();
+      S.lastResult = { url: eff, replaced: !!replaced };
+      maybeAutoApply();
+      refreshDrawer();
+      return r;
+    };
+  }
+
+  /* ---- 拖放：抽屉贴图 / 模型文件夹 ---- */
+  function collectDrop(dt) {
+    var out = [];
+    if (!dt) return out;
+    for (var i = 0; i < dt.files.length; i++) {
+      var f = dt.files[i];
+      var rel = f.webkitRelativePath || f.name || '';
+      if (rel) out.push({ rel: rel, file: f });
+    }
+    return out;
+  }
+  document.addEventListener('dragover', function (e) {
+    var dt = e.dataTransfer;
+    if (!dt) return;
+    e.preventDefault();   // 页内所有拖拽一律允许放置，避免自定义拖拽被浏览器取消
+    var t = e.target;
+    if (stageMain && (t === stageMain || stageMain.contains(t))) stageMain.classList.add('dragover');
+  }, true);
+  document.addEventListener('drop', function (e) {
+    var dt = e.dataTransfer;
+    if (!dt) return;
+    var onStage = stageMain && (e.target === stageMain || stageMain.contains(e.target));
+    var texBase = '';
+    try { texBase = dt.getData('application/x-tu-tex') || ''; } catch (err) {}
+    if (!texBase && S.dragBase) texBase = S.dragBase;
+    if (texBase) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (stageMain) stageMain.classList.remove('dragover');
+      var base = texBase;
+      S.dragBase = null;
+      if (onStage) startTextureUpscale(base);
+      return;
+    }
+    var list = collectDrop(dt);
+    if (!list.length) return;
+    var hasModel = list.some(function (it) { return RE_MODEL.test(it.rel); });
+    if (hasModel) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (stageMain) stageMain.classList.remove('dragover');
+      importModel(list);
+    } else if (onStage) {
+      if (stageMain) stageMain.classList.remove('dragover');
+    }
+  }, true);
+
+  /* ---- 界面开关 ---- */
+  function setSide(open) {
+    modelSide.classList.toggle('open', !!open);
+    if (open) S.mw = Math.max(230, Math.min(S.mw, resizerMax()));
+    modelSide.style.width = open ? S.mw + 'px' : '0px';
+    if (vResizer) vResizer.classList.toggle('off', !open);
+    modToggle.textContent = open ? '收起模型' : '模型预览';
+  }
+  function setDock(open) { texDock.classList.toggle('open', !!open); }
+  function resizerMax() {
+    var tx = texDock ? texDock.clientWidth : 30;
+    return Math.max(260, window.innerWidth - tx - 700);
+  }
+  if (vResizer) {
+    vResizer.addEventListener('dblclick', function () {
+      setSide(!modelSide.classList.contains('open'));
+    });
+    vResizer.addEventListener('pointerdown', function (e) {
+      if (!modelSide.classList.contains('open')) return;
+      if (e.button !== 0) return;
+      e.preventDefault();
+      var startX = e.clientX;
+      var startW = parseFloat(modelSide.style.width) || S.mw || 320;
+      modelSide.classList.add('resizing');
+      vResizer.classList.add('resizing', 'drag');
+      document.body.style.cursor = 'col-resize';
+      function move(ev) {
+        var w = Math.max(230, Math.min(resizerMax(), startW + (ev.clientX - startX)));
+        S.mw = w;
+        modelSide.style.width = w + 'px';
+      }
+      function up() {
+        modelSide.classList.remove('resizing');
+        vResizer.classList.remove('resizing', 'drag');
+        document.body.style.cursor = '';
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      }
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    });
+  }
+  modToggle.addEventListener('click', function () { setSide(!modelSide.classList.contains('open')); });
+  msClose.addEventListener('click', function () { setSide(false); });
+  texTab.addEventListener('click', function () { setDock(!texDock.classList.contains('open')); });
+  texClose.addEventListener('click', function () { setDock(false); });
+
+  msImport.addEventListener('click', function () { modelFile.click(); });
+  msFolder.addEventListener('click', function () { modelFolder.click(); });
+  msTexAdd.addEventListener('click', function () { modelTexFile.click(); });
+
+  modelFile.addEventListener('change', function () {
+    var list = toList(this.files);
+    this.value = '';
+    if (!list.length) return;
+    if (list.some(function (it) { return RE_MODEL.test(it.rel); })) importModel(list);
+    else if (S.sid) uploadExtra(list);
+    else showHint('<strong>所选文件里没有模型</strong><span>请选择 .pmx/.pmd，或包含模型的文件夹</span>', true);
+  });
+  modelFolder.addEventListener('change', function () {
+    var list = toList(this.files);
+    this.value = '';
+    if (list.length) importModel(list);
+  });
+  modelTexFile.addEventListener('change', function () {
+    var list = toList(this.files);
+    this.value = '';
+    if (list.length) uploadExtra(list);
+  });
+
+  msReset.addEventListener('click', function () { if (S.mesh) fitCamera(); });
+  msGrid.addEventListener('click', function () {
+    S.gridOn = !S.gridOn;
+    msGrid.textContent = S.gridOn ? '网格' : '网格关';
+    if (!S.gridOn && S.grid) { S.scene.remove(S.grid); S.grid = null; }
+    if (S.mesh && S.gridOn) fitCamera();
+  });
+  msUnload.addEventListener('click', function () {
+    disposeMesh();
+    if (S.grid) { S.scene.remove(S.grid); S.grid = null; }
+    S.sid = null; S.modelRel = null; S.modelName = '';
+    S.uploaded = []; S.applied.clear(); S.diffuse.clear();
+    S.pendingBase = null; S.matList = []; S.selMat = -1; texLog = [];
+    renderMatPanel();
+    enableExport(false);
+    msName.textContent = '';
+    showHint('<strong>尚未导入模型</strong><span>点“导入 PMX / PMD 模型”<br>或直接把模型文件夹拖进来</span>', false);
+    refreshDrawer();
+    setSide(false);
+  });
+
+  texApplyBtn.addEventListener('click', function () {
+    if (!S.lastResult || !S.mesh) return;
+    var b = texSlotSel.value;
+    if (!b) return;
+    var hits = applyTexture(b, S.lastResult.url);
+    if (hits) { S.applied.set(lower(b), S.lastResult.url); refreshDrawer(); }
+  });
+
+  /* ---- 主题联动 ---- */
+  if (window.MutationObserver) {
+    new MutationObserver(function () {
+      if (S.scene && S.renderer) {
+        try { S.scene.background = new THREE.Color(cssColor()); } catch (e) {}
+      }
+    }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  }
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(resize).observe(stage3d);
+  } else {
+    window.addEventListener('resize', resize);
+  }
+  if (!('webkitdirectory' in modelFolder)) msFolder.style.display = 'none';
+
+  bindLightCtrl();
+  init3D();
+  wireModelPick();
+  setSide(false);
+  setDock(false);
+  refreshDrawer();
+})();
+</script>
+
+<script>
+/* ================= 中间图片预览：滚轮缩放 + 拖拽平移 ================= */
+(function () {
+  'use strict';
+  var stage = document.getElementById('stage');
+  var overlay = document.getElementById('overlay');
+  if (!stage) return;
+  var ids = ['img-original', 'img-preview', 'img-result'];
+  var imgs = ids.map(function (id) { return document.getElementById(id); });
+  var bar = document.getElementById('imgZoomBar');
+  var pctEl = document.getElementById('zPct');
+  var Z = { img: null, nw: 0, nh: 0, z: 1, x: 0, y: 0,
+            down: false, sx: 0, sy: 0, ox: 0, oy: 0, moved: 0, suppress: false };
+  var seen = { 'img-original': false, 'img-preview': false, 'img-result': false };
+  function visible() {
+    for (var i = 0; i < imgs.length; i++) {
+      if (imgs[i] && !imgs[i].classList.contains('hidden')) return imgs[i];
+    }
+    return null;
+  }
+  function box() { return { w: stage.clientWidth, h: stage.clientHeight }; }
+  function fitK() {
+    if (!Z.nw || !Z.nh) return 1;
+    var b = box();
+    var k = Math.min(b.w / Z.nw, b.h / Z.nh);
+    if (!isFinite(k) || k <= 0) k = 1;
+    return k * 0.98;
+  }
+  function kAll() { return fitK() * Z.z; }
+  function clampAxis(off, content, avail) {
+    var pad = Math.min(60, content * 0.15);
+    if (content <= avail) return (avail - content) / 2;
+    return Math.max(avail - content - pad, Math.min(off, pad));
+  }
+  function apply() {
+    var img = visible();
+    if (!img) { if (bar) bar.classList.add('hidden'); return; }
+    Z.img = img;
+    if (!Z.nw && img.naturalWidth) { Z.nw = img.naturalWidth; Z.nh = img.naturalHeight; }
+    var k = kAll();
+    var b = box();
+    Z.x = clampAxis(Z.x, Z.nw * k, b.w);
+    Z.y = clampAxis(Z.y, Z.nh * k, b.h);
+    img.style.position = 'absolute';
+    img.style.left = '0px';
+    img.style.top = '0px';
+    img.style.width = 'auto';
+    img.style.height = 'auto';
+    img.style.maxWidth = 'none';
+    img.style.maxHeight = 'none';
+    img.style.transformOrigin = '0 0';
+    img.style.transform = 'translate(' + Z.x + 'px,' + Z.y + 'px) scale(' + k + ')';
+    if (bar) bar.classList.remove('hidden');
+    if (pctEl) pctEl.textContent = Math.round(Z.z * 100) + '%';
+  }
+  function refit() {
+    Z.z = 1;
+    var k = fitK();
+    var b = box();
+    Z.x = (b.w - Z.nw * k) / 2;
+    Z.y = (b.h - Z.nh * k) / 2;
+    apply();
+  }
+  function zoomAt(cx, cy, factor) {
+    var old = kAll();
+    if (!(old > 0)) return;
+    var px = (cx - Z.x) / old, py = (cy - Z.y) / old;
+    Z.z = Math.max(0.05, Math.min(30, Z.z * factor));
+    var nk = kAll();
+    Z.x = cx - px * nk;
+    Z.y = cy - py * nk;
+    apply();
+  }
+  imgs.forEach(function (img) {
+    if (!img) return;
+    img.addEventListener('load', function () {
+      Z.nw = img.naturalWidth; Z.nh = img.naturalHeight;
+      if (!img.classList.contains('hidden')) {
+        if (!seen[img.id]) { seen[img.id] = true; refit(); } else { apply(); }
+      }
+    });
+  });
+  var obs = new MutationObserver(function () {
+    var v = visible();
+    if (!v) { if (bar) bar.classList.add('hidden'); return; }
+    Z.nw = v.naturalWidth || Z.nw;
+    Z.nh = v.naturalHeight || Z.nh;
+    if (!seen[v.id] && Z.nw) { seen[v.id] = true; refit(); }
+    else apply();
+  });
+  imgs.forEach(function (img) { if (img) obs.observe(img, { attributes: true, attributeFilter: ['class'] }); });
+
+  stage.addEventListener('wheel', function (e) {
+    if (!visible() || !Z.nw) return;
+    if (overlay && !overlay.classList.contains('hidden')) return;
+    if (bar && bar.contains(e.target)) return;
+    e.preventDefault();
+    var r = stage.getBoundingClientRect();
+    zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0016));
+  }, { passive: false });
+
+  stage.addEventListener('pointerdown', function (e) {
+    var v = visible();
+    if (!v || !Z.nw) return;
+    if (bar && bar.contains(e.target)) return;
+    if (overlay && !overlay.classList.contains('hidden')) return;
+    Z.down = true;
+    Z.sx = e.clientX; Z.sy = e.clientY;
+    Z.ox = Z.x; Z.oy = Z.y;
+    Z.moved = 0;
+    v.classList.add('grabbing');
+  });
+  window.addEventListener('pointermove', function (e) {
+    if (!Z.down) return;
+    var dx = e.clientX - Z.sx, dy = e.clientY - Z.sy;
+    if (Math.abs(dx) + Math.abs(dy) > 3) Z.moved = 1;
+    if (Z.moved) { Z.x = Z.ox + dx; Z.y = Z.oy + dy; apply(); }
+  });
+  window.addEventListener('pointerup', function () {
+    if (!Z.down) return;
+    Z.down = false;
+    if (Z.img) Z.img.classList.remove('grabbing');
+    if (Z.moved) {
+      Z.suppress = true;
+      setTimeout(function () { Z.suppress = false; }, 150);
+    }
+  });
+  document.addEventListener('click', function (e) {
+    if (Z.suppress) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
+
+  function wire(id, fn) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('click', fn);
+  }
+  wire('zIn', function () { if (visible() && Z.nw) { var b = stage.getBoundingClientRect(); zoomAt(b.width / 2, b.height / 2, 1.18); } });
+  wire('zOut', function () { if (visible() && Z.nw) { var b = stage.getBoundingClientRect(); zoomAt(b.width / 2, b.height / 2, 1 / 1.18); } });
+  wire('zFit', function () { if (visible()) refit(); });
+})();
+</script>
+</body>

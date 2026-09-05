@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>渲染贴图生成 · TextureUpscaler</title>
+<style>
+  :root {
+    --bg:#17181b; --panel:#1d1f23; --panel2:#212429; --line:#2a2d33; --line-strong:#4a4e56;
+    --text:#e6e6e3; --muted:#9a9ea6; --accent:#e6e6e3; --accent-contrast:#141518;
+    --track:#33363c; --ck1:#1c1e21; --ck2:#202226;
+  }
+  body.light {
+    --bg:#f5f5f3; --panel:#ffffff; --panel2:#efefec; --line:#e2e2df; --line-strong:#b9b9b4;
+    --text:#1a1a1a; --muted:#8a8a86; --accent:#141518; --accent-contrast:#ffffff;
+    --track:#d8d8d4; --ck1:#e9e9e6; --ck2:#f2f2ef;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; min-height: 100vh; }
+  .hidden { display: none !important; }
+  header { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header .brand { font-weight: 700; }
+  .navlink { color: var(--muted); text-decoration: none; font-size: 13px; border: 1px solid var(--line); padding: 5px 12px; border-radius: 7px; }
+  .navlink:hover { color: var(--text); }
+  header .sp { margin-left: auto; }
+  .iconbtn { border: 1px solid var(--line); background: var(--panel2); color: var(--text); padding: 5px 12px; border-radius: 7px; cursor: pointer; font-size: 13px; }
+
+  .wrap { display: flex; gap: 20px; padding: 20px; max-width: 1400px; margin: 0 auto; }
+  .left { width: 320px; flex-shrink: 0; }
+  .right { flex: 1; min-width: 0; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .card h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+
+  .srcbox {
+    border: 1px dashed var(--line-strong); border-radius: 10px; min-height: 180px;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    background: repeating-conic-gradient(var(--ck1) 0% 25%, var(--ck2) 0% 50%) 0 0 / 16px 16px;
+    color: var(--muted); text-align: center; overflow: hidden;
+  }
+  .srcbox img { max-width: 100%; max-height: 260px; }
+
+  .row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .row label { width: 76px; flex-shrink: 0; color: var(--muted); font-size: 13px; }
+  .row output { width: 42px; text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--muted); }
+  input[type=range] { flex: 1; -webkit-appearance: none; appearance: none; background: transparent; height: 22px; cursor: pointer; }
+  input[type=range]::-webkit-slider-runnable-track { height: 4px; background: var(--track); border-radius: 2px; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); margin-top: -5px; }
+  .check { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+
+  button.primary { width: 100%; padding: 11px; background: var(--accent); color: var(--accent-contrast); border: none; border-radius: 9px; cursor: pointer; font-size: 14px; font-weight: 600; }
+  button:disabled { opacity: .45; cursor: default; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .map { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .map .t { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .map .t a { color: var(--muted); text-decoration: none; font-size: 12px; }
+  .map .t a:hover { color: var(--text); }
+  .map img { width: 100%; display: block; background: repeating-conic-gradient(var(--ck1) 0% 25%, var(--ck2) 0% 50%) 0 0 / 14px 14px; }
+  .empty { color: var(--muted); padding: 40px; text-align: center; }
+  .error { color: #e57373; margin-top: 10px; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">渲染贴图生成</div>
+  <a class="navlink" href="/">返回超分</a>
+  <div class="sp"></div>
+  <button class="iconbtn" id="themeBtn">日间</button>
+</header>
+
+<div class="wrap">
+  <div class="left">
+    <div class="card">
+      <h2>源贴图</h2>
+      <div class="srcbox" id="srcbox"><span>拖入 / 点击选择图片</span></div>
+      <div style="height:14px"></div>
+      <h2>参数</h2>
+      <div class="row"><label>法线强度</label><input type="range" id="strength" min="0" max="300" value="100"><output id="strengthV">1.00</output></div>
+      <div class="row"><label>粗糙度基准</label><input type="range" id="rough" min="0" max="100" value="50"><output id="roughV">0.50</output></div>
+      <div class="row"><label>金属度阈值</label><input type="range" id="metal" min="0" max="100" value="60"><output id="metalV">0.60</output></div>
+      <label class="check"><input type="checkbox" id="invert"> 反转高度（暗=凸起）</label>
+      <button class="primary" id="genBtn" disabled>生成贴图</button>
+      <div class="error" id="error"></div>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="grid" id="grid"><div class="empty" style="grid-column:1/-1">生成后会在这里显示 法线 / 高度 / 粗糙度 / 金属度 / AO 贴图</div></div>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp,image/bmp" hidden>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let imgId = null;
+const LABELS = { normal:'法线 Normal', height:'高度 Height', roughness:'粗糙度 Roughness', metallic:'金属度 Metallic', ao:'环境光遮蔽 AO' };
+
+function applyTheme(mode){ document.body.classList.toggle('light', mode==='light'); $('themeBtn').textContent = mode==='light'?'夜间':'日间'; localStorage.setItem('tu_theme', mode); }
+$('themeBtn').addEventListener('click', ()=> applyTheme(document.body.classList.contains('light')?'dark':'light'));
+applyTheme(localStorage.getItem('tu_theme') || 'dark');
+
+[['strength','strengthV',100],['rough','roughV',100],['metal','metalV',100]].forEach(([id,out])=>{
+  $(id).addEventListener('input', ()=>{ $(out).textContent = ($(id).value/100).toFixed(2); });
+});
+
+async function handleFile(file){
+  const fd = new FormData(); fd.append('file', file);
+  $('error').textContent = '';
+  const res = await fetch('/api/upload', { method:'POST', body: fd });
+  const data = await res.json();
+  if (!res.ok){ $('error').textContent = data.error||'上传失败'; return; }
+  imgId = data.id;
+  $('srcbox').innerHTML = '';
+  const im = new Image(); im.src = URL.createObjectURL(file);
+  $('srcbox').appendChild(im);
+  $('genBtn').disabled = false;
+}
+$('srcbox').addEventListener('click', ()=> $('fileInput').click());
+$('srcbox').addEventListener('dragover', e=> e.preventDefault());
+$('srcbox').addEventListener('drop', e=>{ e.preventDefault(); const f=e.dataTransfer.files[0]; if(f) handleFile(f); });
+$('fileInput').addEventListener('change', e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); });
+
+$('genBtn').addEventListener('click', async ()=>{
+  if (!imgId) return;
+  $('error').textContent = ''; $('genBtn').disabled = true; $('genBtn').textContent = '生成中…';
+  try {
+    const res = await fetch('/api/pbr', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+      img_id: imgId,
+      strength: $('strength').value/100,
+      rough_base: $('rough').value/100,
+      metal_thresh: $('metal').value/100,
+      invert: $('invert').checked,
+    })});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error||'生成失败');
+    renderMaps(data.maps);
+  } catch(e){ $('error').textContent = e.message; }
+  finally { $('genBtn').disabled = false; $('genBtn').textContent = '生成贴图'; }
+});
+
+function renderMaps(maps){
+  const grid = $('grid'); grid.innerHTML = '';
+  Object.keys(LABELS).forEach(key=>{
+    const url = maps[key]; if (!url) return;
+    const div = document.createElement('div'); div.className = 'map';
+    div.innerHTML = '<div class="t"><span>'+LABELS[key]+'</span><a href="'+url+'" download>下载</a></div><img src="'+url+'">';
+    grid.appendChild(div);
+  });
+}
+</script>
+</body>
+</html>
